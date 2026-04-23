@@ -1,4 +1,4 @@
-# README — ULA Combinacional
+# DOCUMENTAÇÃO — ULA Combinacional
 
 ## Visão geral
 
