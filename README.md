@@ -1053,17 +1053,3 @@ O fluxo completo do sistema pode ser resumido assim:
 Esse modelo permitiu usar o Arduino como unidade de controle do sistema, mantendo a parte lógica principal no hardware digital e usando software apenas para seleção, leitura e exibição dos resultados.
 
 ---
-
-## 11. Conclusão desta etapa
-
-A utilização do Arduino Mega 2560 deixou o projeto mais organizado e mais fácil de testar.
-
-Com ele, foi possível:
-
-* selecionar diferentes operações com apenas 2 bits de controle
-* ler sempre as mesmas 4 entradas finais do circuito
-* reaproveitar os multiplexadores para várias funções
-* mostrar o resultado em displays de 7 segmentos
-* acompanhar o funcionamento detalhado pelo monitor serial
-
-Dessa forma, o sistema se comporta como uma pequena ULA didática, combinando lógica digital, seleção por opcode, leitura por software e exibição visual dos resultados.
