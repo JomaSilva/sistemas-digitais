@@ -40,7 +40,7 @@ Cout S2 S1 S0
 
 ### 1.1 Bit 0
 
-Como o bit 0 não recebe carry de entrada, ele funciona como um **meio somador**.
+Como o bit 0 não recebe carry de entrada, ele funciona como um meio somador.
 
 #### Tabela verdade de S0 e C1
 
@@ -103,8 +103,6 @@ O bit 1 recebe `A1`, `B1` e o carry `C1` vindo do bit anterior.
 #### Mapa K de S1
 
 `S1 = A1 ⊕ B1 ⊕ C1`
-
-Mapa em formato 2x4:
 
 | A1 \ B1C1 | 00 | 01 | 11 | 10 |
 | --------- | -- | -- | -- | -- |
@@ -338,12 +336,67 @@ GT2 = A'·B
 
 ---
 
-## 5. Observação
+## 5. Uso dos multiplexadores no projeto
+
+Para juntar as saídas das operações e mandar tudo para o Arduino usando as mesmas quatro entradas, foram usados **4 multiplexadores 8x1**.
+
+A ideia é simples: como o resultado final lido pelo Arduino ocupa até 4 bits, cada MUX guarda **um bit de saída** de cada operação. Assim, dependendo do código de operação enviado pelo Arduino, os quatro MUX passam a saída correspondente daquela operação.
+
+A organização ficou assim:
+
+* **MUX 0:** `S0`, `GT1`, `~A`
+* **MUX 1:** `S1`, `GT2`, `~B`
+* **MUX 2:** `S2`, `A`
+* **MUX 3:** `Cout`, `B`
+
+No caso da soma, isso forma o resultado completo em 4 bits:
+
+```text
+MUX 0 -> S0
+MUX 1 -> S1
+MUX 2 -> S2
+MUX 3 -> Cout
+```
+
+No caso do complemento, apenas os dois primeiros MUX são usados com informação útil:
+
+```text
+MUX 0 -> ~A
+MUX 1 -> ~B
+```
+
+No caso da comparação, além de indicar a relação lógica entre as entradas, o sistema também retorna os próprios valores originais de `A` e `B`:
+
+```text
+MUX 0 -> GT1
+MUX 1 -> GT2
+MUX 2 -> A
+MUX 3 -> B
+```
+
+Com isso, quando o Arduino envia o serial code da comparação, ele consegue ler:
+
+* se `A > B`
+* se `B > A`
+* se `A = B`
+* e também os valores de `A` e `B` para conferência
+
+A interpretação funciona assim:
+
+* `GT1 = 1` e `GT2 = 0`  → `A > B`
+* `GT1 = 0` e `GT2 = 1`  → `B > A`
+* `GT1 = 0` e `GT2 = 0`  → `A = B`
+
+Essa abordagem facilita bastante o projeto, porque o Arduino sempre lê o resultado final pelas mesmas entradas, mudando apenas a operação selecionada.
+
+---
+
+## 6. Observação final
 
 Ao representar o sistema como uma pequena ULA, as três operações podem ser vistas assim:
 
 * **Somador:** retorna `S0, S1, S2, Cout`
 * **Complemento:** retorna `~A, ~B`
-* **Comparador:** retorna `GT1, GT2`
+* **Comparador:** retorna `GT1, GT2, A, B`
 
-Isso permite selecionar a saída desejada com multiplexadores ou com uma lógica de controle por opcode.
+Isso permite selecionar a saída desejada com multiplexadores e com uma lógica de controle por opcode enviada pelo Arduino.
