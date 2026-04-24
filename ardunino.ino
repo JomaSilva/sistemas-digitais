@@ -1,4 +1,4 @@
-// ULA com leitura apenas nas portas 22, 23, 24 e 25
+// ULA com 1 display só em hexadecimal
 
 const int OP0 = 2;
 const int OP1 = 3;
@@ -8,8 +8,13 @@ const int IN1 = 23;
 const int IN2 = 24;
 const int IN3 = 25;
 
-const bool COMMON_ANODE = false;
+// display anodo comum
+const bool COMMON_ANODE = true;
 
+// se o comum do display ligar com HIGH, deixa true
+const bool DIGIT_ACTIVE_HIGH = true;
+
+// mapeamento atual dos segmentos
 const int SEG_A = 40;
 const int SEG_B = 41;
 const int SEG_C = 42;
@@ -18,8 +23,8 @@ const int SEG_E = 44;
 const int SEG_F = 45;
 const int SEG_G = 46;
 
-const int DIG_TENS = 47;
-const int DIG_UNITS = 48;
+// usa um lado só do display
+const int DIG_HEX = 47;
 
 const int MAX_OPCODES = 64;
 uint8_t programOpcodes[MAX_OPCODES];
@@ -29,19 +34,6 @@ int pc = 0;
 String lineBuffer = "";
 int currentValueToDisplay = 0;
 
-const bool digitMap[10][7] = {
-  {1,1,1,1,1,1,0},
-  {0,1,1,0,0,0,0},
-  {1,1,0,1,1,0,1},
-  {1,1,1,1,0,0,1},
-  {0,1,1,0,0,1,1},
-  {1,0,1,1,0,1,1},
-  {1,0,1,1,1,1,1},
-  {1,1,1,0,0,0,0},
-  {1,1,1,1,1,1,1},
-  {1,1,1,1,0,1,1}
-};
-
 struct MuxData {
   int b0;
   int b1;
@@ -49,13 +41,33 @@ struct MuxData {
   int b3;
 };
 
-// Escreve o opcode no hardware
+// ordem: a b c d e f g
+const bool hexMap[16][7] = {
+  {1,1,1,1,1,1,0}, // 0
+  {0,1,1,0,0,0,0}, // 1
+  {1,1,0,1,1,0,1}, // 2
+  {1,1,1,1,0,0,1}, // 3
+  {0,1,1,0,0,1,1}, // 4
+  {1,0,1,1,0,1,1}, // 5
+  {1,0,1,1,1,1,1}, // 6
+  {1,1,1,0,0,0,0}, // 7
+  {1,1,1,1,1,1,1}, // 8
+  {1,1,1,1,0,1,1}, // 9
+  {1,1,1,0,1,1,1}, // A
+  {0,0,1,1,1,1,1}, // b
+  {1,0,0,1,1,1,0}, // C
+  {0,1,1,1,1,0,1}, // d
+  {1,0,0,1,1,1,1}, // E
+  {1,0,0,0,1,1,1}  // F
+};
+
+// escreve o opcode
 void writeOpcode(uint8_t opcode) {
   digitalWrite(OP0, opcode & 0x01);
   digitalWrite(OP1, (opcode >> 1) & 0x01);
 }
 
-// Lê as 4 entradas vindas do mux
+// lê os 4 bits vindos dos mux
 MuxData readInputs() {
   MuxData data;
   data.b0 = digitalRead(IN0);
@@ -65,84 +77,102 @@ MuxData readInputs() {
   return data;
 }
 
-// Converte 22..25 em valor de 4 bits
+// monta um nibble com 22 como LSB e 25 como MSB
 int readNibble() {
   MuxData data = readInputs();
   return (data.b0 << 0) | (data.b1 << 1) | (data.b2 << 2) | (data.b3 << 3);
 }
 
-// Soma: 22=S0, 23=S1, 24=S2, 25=S3
+// printa os bits lidos
+void printInputBits() {
+  MuxData data = readInputs();
+
+  Serial.print("Bits lidos 22 23 24 25 -> ");
+  Serial.print(data.b0);
+  Serial.print(" ");
+  Serial.print(data.b1);
+  Serial.print(" ");
+  Serial.print(data.b2);
+  Serial.print(" ");
+  Serial.println(data.b3);
+
+  Serial.print("Binario [25..22] = ");
+  Serial.print(data.b3);
+  Serial.print(data.b2);
+  Serial.print(data.b1);
+  Serial.println(data.b0);
+}
+
+// soma
 int readSumValue() {
   return readNibble();
 }
 
-// Comparação: 22=GT1, 23=GT2, 24=A, 25=B
-int readComparisonValue() {
+// complemento
+// os bits que chegam ja sao o complemento
+// entao aqui so le e transforma em decimal
+int readComplementValue() {
   MuxData data = readInputs();
-  int a = data.b2;
-  int b = data.b3;
-  return (a || b) ? 1 : 0;
+
+  int y0 = data.b0;
+  int y1 = data.b1;
+
+  Serial.print("Complemento recebido bruto: ");
+  Serial.print(y1);
+  Serial.println(y0);
+
+  return (y0 << 0) | (y1 << 1);
 }
 
-// Mostra a relação entre A e B
-void reportComparisonRelation() {
+// comparacao
+// GT1 = b0
+// GT2 = b1
+// A   = b2
+// B   = b3
+//
+// display:
+// A > B -> A
+// B > A -> b
+// A = B -> 0
+int readComparisonDisplayValue() {
   MuxData data = readInputs();
 
   int gt1 = data.b0;
   int gt2 = data.b1;
-  int a = data.b2;
-  int b = data.b3;
+  int a   = data.b2;
+  int b   = data.b3;
 
-  Serial.print("Comparacao: A=");
-  Serial.print(a);
-  Serial.print(" B=");
-  Serial.print(b);
-  Serial.print(" | GT1=");
+  Serial.print("Comparacao -> GT1=");
   Serial.print(gt1);
   Serial.print(" GT2=");
   Serial.print(gt2);
+  Serial.print(" A=");
+  Serial.print(a);
+  Serial.print(" B=");
+  Serial.print(b);
   Serial.print(" | Relacao: ");
 
   if (gt1 == 1 && gt2 == 0) {
     Serial.println("A > B");
-  } else if (gt1 == 0 && gt2 == 1) {
+    return 10; // A
+  }
+
+  if (gt1 == 0 && gt2 == 1) {
     Serial.println("B > A");
-  } else if (gt1 == 0 && gt2 == 0) {
+    return 11; // b
+  }
+
+  if (gt1 == 0 && gt2 == 0) {
     Serial.println("A = B");
-  } else {
-    Serial.println("estado invalido");
-  }
-}
-
-// Complemento: 22=Y0, 23=Y1
-int readComplementValue() {
-  MuxData data = readInputs();
-  return (data.b0 << 0) | (data.b1 << 1);
-}
-
-// Liga os segmentos do dígito
-void setSegmentsForDigit(int d) {
-  if (d < 0 || d > 9) d = 0;
-
-  bool segState[7];
-  for (int i = 0; i < 7; i++) {
-    segState[i] = digitMap[d][i];
-    if (COMMON_ANODE) {
-      segState[i] = !segState[i];
-    }
+    return 0; // 0
   }
 
-  digitalWrite(SEG_A, segState[0]);
-  digitalWrite(SEG_B, segState[1]);
-  digitalWrite(SEG_C, segState[2]);
-  digitalWrite(SEG_D, segState[3]);
-  digitalWrite(SEG_E, segState[4]);
-  digitalWrite(SEG_F, segState[5]);
-  digitalWrite(SEG_G, segState[6]);
+  Serial.println("estado invalido");
+  return 15; // F para erro
 }
 
-// Liga ou desliga um dígito
-void enableDigit(int pin, bool on) {
+// escreve segmento individual
+void writeSegmentPin(int pin, bool on) {
   if (COMMON_ANODE) {
     digitalWrite(pin, on ? LOW : HIGH);
   } else {
@@ -150,68 +180,68 @@ void enableDigit(int pin, bool on) {
   }
 }
 
-// Apaga todos os segmentos
-void turnOffAllSegments() {
-  digitalWrite(SEG_A, COMMON_ANODE ? HIGH : LOW);
-  digitalWrite(SEG_B, COMMON_ANODE ? HIGH : LOW);
-  digitalWrite(SEG_C, COMMON_ANODE ? HIGH : LOW);
-  digitalWrite(SEG_D, COMMON_ANODE ? HIGH : LOW);
-  digitalWrite(SEG_E, COMMON_ANODE ? HIGH : LOW);
-  digitalWrite(SEG_F, COMMON_ANODE ? HIGH : LOW);
-  digitalWrite(SEG_G, COMMON_ANODE ? HIGH : LOW);
+// escreve um valor hexadecimal no display
+void setSegmentsForHex(int value) {
+  if (value < 0) value = 0;
+  if (value > 15) value = 15;
+
+  writeSegmentPin(SEG_A, hexMap[value][0]);
+  writeSegmentPin(SEG_B, hexMap[value][1]);
+  writeSegmentPin(SEG_C, hexMap[value][2]);
+  writeSegmentPin(SEG_D, hexMap[value][3]);
+  writeSegmentPin(SEG_E, hexMap[value][4]);
+  writeSegmentPin(SEG_F, hexMap[value][5]);
+  writeSegmentPin(SEG_G, hexMap[value][6]);
 }
 
-// Atualiza o display multiplexado
+// liga ou desliga o display
+void enableDigit(bool on) {
+  if (DIGIT_ACTIVE_HIGH) {
+    digitalWrite(DIG_HEX, on ? HIGH : LOW);
+  } else {
+    digitalWrite(DIG_HEX, on ? LOW : HIGH);
+  }
+}
+
+// apaga todos os segmentos
+void turnOffAllSegments() {
+  writeSegmentPin(SEG_A, false);
+  writeSegmentPin(SEG_B, false);
+  writeSegmentPin(SEG_C, false);
+  writeSegmentPin(SEG_D, false);
+  writeSegmentPin(SEG_E, false);
+  writeSegmentPin(SEG_F, false);
+  writeSegmentPin(SEG_G, false);
+}
+
+// atualiza o display
 void refreshDisplay() {
-  static bool showTens = false;
-  static unsigned long lastMuxMicros = 0;
-
-  unsigned long now = micros();
-  if (now - lastMuxMicros < 2000) return;
-  lastMuxMicros = now;
-
   int value = currentValueToDisplay;
   if (value < 0) value = 0;
-  if (value > 99) value = 99;
+  if (value > 15) value = 15;
 
-  int tens = value / 10;
-  int units = value % 10;
-
-  enableDigit(DIG_TENS, false);
-  enableDigit(DIG_UNITS, false);
-
-  if (showTens) {
-    if (tens == 0 && value < 10) {
-      turnOffAllSegments();
-    } else {
-      setSegmentsForDigit(tens);
-      enableDigit(DIG_TENS, true);
-    }
-  } else {
-    setSegmentsForDigit(units);
-    enableDigit(DIG_UNITS, true);
-  }
-
-  showTens = !showTens;
+  setSegmentsForHex(value);
+  enableDigit(true);
 }
 
-// Verifica se a string é binária
+// checa se a string so tem 0 e 1
 bool isBinaryString(const String& s) {
   if (s.length() == 0) return false;
 
   for (unsigned int i = 0; i < s.length(); i++) {
     if (s[i] != '0' && s[i] != '1') return false;
   }
+
   return true;
 }
 
-// Limpa o programa
+// limpa o programa
 void clearProgram() {
   programLength = 0;
   pc = 0;
 }
 
-// Transforma os bits digitados em opcodes
+// transforma a string em opcodes de 2 bits
 void parseProgramBits(const String& bits) {
   clearProgram();
 
@@ -226,7 +256,7 @@ void parseProgramBits(const String& bits) {
   }
 }
 
-// Mostra os opcodes carregados
+// mostra o programa carregado
 void showProgram() {
   Serial.print("Programa carregado: ");
 
@@ -244,7 +274,7 @@ void showProgram() {
   Serial.println();
 }
 
-// Executa o próximo opcode
+// executa a proxima instrucao
 void executeNextOpcode() {
   if (programLength == 0) {
     Serial.println("Nenhum programa carregado.");
@@ -263,34 +293,53 @@ void executeNextOpcode() {
 
   switch (opcode) {
     case 0b00: {
+      printInputBits();
+
       int value = readSumValue();
       currentValueToDisplay = value;
 
-      Serial.print("OP 00 - SOMA -> ");
-      Serial.println(value);
+      Serial.print("OP 00 - SOMA -> decimal ");
+      Serial.print(value);
+      Serial.print(" | hex ");
+      Serial.println(value, HEX);
       break;
     }
 
     case 0b01: {
-      int value = readComparisonValue();
+      printInputBits();
+
+      int value = readComparisonDisplayValue();
       currentValueToDisplay = value;
 
-      Serial.print("OP 01 - COMPARACAO -> maior valor = ");
-      Serial.println(value);
-      reportComparisonRelation();
+      Serial.print("OP 01 - COMPARACAO -> display ");
+      if (value == 10) {
+        Serial.println("A");
+      } else if (value == 11) {
+        Serial.println("b");
+      } else if (value == 0) {
+        Serial.println("0");
+      } else {
+        Serial.println("F");
+      }
       break;
     }
 
     case 0b10: {
+      printInputBits();
+
       int value = readComplementValue();
       currentValueToDisplay = value;
 
-      Serial.print("OP 10 - COMPLEMENTO -> ");
-      Serial.println(value);
+      Serial.print("OP 10 - COMPLEMENTO -> decimal ");
+      Serial.print(value);
+      Serial.print(" | hex ");
+      Serial.println(value, HEX);
       break;
     }
 
     case 0b11: {
+      printInputBits();
+
       currentValueToDisplay = 0;
       Serial.println("OP 11 - RESERVADO -> 0");
       break;
@@ -298,7 +347,7 @@ void executeNextOpcode() {
   }
 }
 
-// Processa o que vier do serial
+// processa o que vier do serial
 void processLine(String cmd) {
   cmd.trim();
 
@@ -353,18 +402,19 @@ void setup() {
   pinMode(SEG_F, OUTPUT);
   pinMode(SEG_G, OUTPUT);
 
-  pinMode(DIG_TENS, OUTPUT);
-  pinMode(DIG_UNITS, OUTPUT);
+  pinMode(DIG_HEX, OUTPUT);
 
   writeOpcode(0);
   currentValueToDisplay = 0;
 
-  enableDigit(DIG_TENS, false);
-  enableDigit(DIG_UNITS, false);
+  enableDigit(false);
   turnOffAllSegments();
 
   Serial.println("=== ULA combinacional - Mega 2560 ===");
-  Serial.println("Lendo apenas as entradas 22, 23, 24 e 25.");
+  Serial.println("Usando 1 display em hexadecimal.");
+  Serial.println("Comparacao: A>B mostra A, B>A mostra b, iguais mostra 0.");
+  Serial.println("Complemento: le os bits brutos e converte direto.");
+  Serial.println("Lendo apenas 22, 23, 24 e 25.");
   Serial.println("Envie algo como 000110");
   Serial.println("Isso vira: [00] [01] [10]");
   Serial.println("Depois envie * para executar uma por vez.");
