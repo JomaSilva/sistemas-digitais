@@ -401,100 +401,119 @@ Ao representar o sistema como uma pequena ULA, as três operações podem ser vi
 
 Isso permite selecionar a saída desejada com multiplexadores e com uma lógica de controle por opcode enviada pelo Arduino.
 
-# Arduino, código e displays
+hardware digital e usando software apenas para seleção, leitura e exibição dos resultados.
 
+---
 ## 7. Papel do Arduino no sistema
 
-No projeto, o **Arduino Mega 2560** funciona como a parte de controle e leitura da ULA.
+No projeto, o **Arduino Mega 2560** funciona como a parte de controle, leitura e exibição da ULA.
 
-Ele tem três funções principais:
+A lógica principal das operações continua sendo feita no hardware digital, usando o somador, o complemento, o comparador e os multiplexadores. O Arduino entra para:
 
-* enviar o **opcode** da operação para o hardware
-* ler os **4 bits de saída** vindos dos multiplexadores
-* mostrar o resultado nos **displays de 7 segmentos** e no **monitor serial**
+* enviar o **opcode** da operação para os MUX
+* ler os **4 bits finais** vindos dos MUX
+* interpretar esses bits dependendo da operação escolhida
+* mostrar o resultado em **um display de 7 segmentos em hexadecimal**
+* mostrar detalhes no **Monitor Serial**
 
-A ideia geral do funcionamento é a seguinte:
+A ideia geral é:
 
-1. o Arduino recebe um comando pelo serial
-2. esse comando é quebrado em opcodes de 2 bits
-3. cada opcode é enviado para as linhas de seleção `OP0` e `OP1`
-4. os multiplexadores liberam a saída correspondente à operação escolhida
-5. o Arduino lê os bits finais nas portas `22, 23, 24 e 25`
-6. o valor é mostrado no display e, no caso da comparação, também é detalhado no monitor serial
+1. o usuário envia uma sequência binária pelo Serial
+2. o Arduino separa essa sequência em opcodes de 2 bits
+3. o Arduino envia o opcode para os pinos `OP0` e `OP1`
+4. os MUX selecionam as saídas corretas da operação
+5. o Arduino lê os pinos `22, 23, 24 e 25`
+6. o resultado é convertido e mostrado no display hexadecimal
 
-### 7.1 Operações controladas por opcode
+---
 
-A seleção da operação é feita com 2 bits:
+## 8. OpCodes usados
 
-```text
-00 -> soma
-01 -> comparação
-10 -> complemento
-11 -> reservado
-```
-
-### 7.2 Entradas e saídas usadas no Arduino
-
-#### Saídas de seleção
-
-* `OP0` -> pino 2
-* `OP1` -> pino 3
-
-Esses dois pinos saem do Arduino e vão para as linhas de seleção dos 4 MUX.
-
-#### Entradas vindas dos MUX
-
-* `22` -> bit 0
-* `23` -> bit 1
-* `24` -> bit 2
-* `25` -> bit 3
-
-Ou seja, o Arduino sempre lê o resultado final usando os mesmos quatro pinos.
-
-A leitura é feita na ordem:
+A seleção da operação é feita por 2 bits:
 
 ```text
-22 = bit menos significativo
-23 = bit 1
-24 = bit 2
-25 = bit mais significativo
+00 -> Soma
+01 -> Comparação
+10 -> Complemento
+11 -> Reservado
 ```
 
-Então o valor binário lido é montado assim:
+Esses dois bits são enviados pelo Arduino para os MUX através dos pinos:
+
+| Sinal | Pino no Arduino | Função                            |
+| ----- | --------------- | --------------------------------- |
+| OP0   | 2               | bit menos significativo do opcode |
+| OP1   | 3               | bit mais significativo do opcode  |
+
+---
+
+## 9. Leitura das saídas dos MUX
+
+O Arduino lê sempre os mesmos quatro pinos:
+
+| Pino Arduino | Bit lido | Significado geral   |
+| ------------ | -------- | ------------------- |
+| 22           | bit 0    | menos significativo |
+| 23           | bit 1    | bit intermediário   |
+| 24           | bit 2    | bit intermediário   |
+| 25           | bit 3    | mais significativo  |
+
+A montagem do valor é feita assim:
 
 ```text
-valor = b0 + 2·b1 + 4·b2 + 8·b3
+valor = bit0 + 2·bit1 + 4·bit2 + 8·bit3
 ```
 
-### 7.3 Como o Arduino interpreta cada operação
+Ou seja:
 
-O significado desses quatro bits depende da operação selecionada.
+```text
+valor = pino22·1 + pino23·2 + pino24·4 + pino25·8
+```
 
-#### Soma
+---
+
+## 10. Organização dos MUX
+
+Foram usados **4 multiplexadores 8x1**, um para cada bit da saída final.
+
+A organização ficou assim:
+
+| MUX  | Soma | Comparação | Complemento |
+| ---- | ---- | ---------- | ----------- |
+| MUX0 | S0   | GT1        | ~A          |
+| MUX1 | S1   | GT2        | ~B          |
+| MUX2 | S2   | A          | —           |
+| MUX3 | Cout | B          | —           |
+
+Com isso, cada operação usa os mesmos quatro pinos de leitura do Arduino, mas com significados diferentes.
+
+### 10.1 Soma
+
+Na soma, os quatro MUX formam o resultado completo em 4 bits:
 
 ```text
 [MUX0, MUX1, MUX2, MUX3] = [S0, S1, S2, Cout]
 ```
 
-#### Comparação
+O Arduino lê esses quatro bits e mostra o resultado em hexadecimal no display.
+
+Exemplo:
+
+```text
+0011 -> 3
+1010 -> A
+1111 -> F
+```
+
+### 10.2 Comparação
+
+Na comparação, os quatro bits lidos são:
 
 ```text
 [MUX0, MUX1, MUX2, MUX3] = [GT1, GT2, A, B]
 ```
 
-#### Complemento
-
-```text
-[MUX0, MUX1] = [~A, ~B]
-```
-
-No caso da comparação, o Arduino usa:
-
-* `GT1` para saber se `A > B`
-* `GT2` para saber se `B > A`
-* `A` e `B` para mostrar os valores originais lidos
-
-A interpretação fica assim:
+A interpretação é:
 
 ```text
 GT1 = 1 e GT2 = 0 -> A > B
@@ -502,13 +521,120 @@ GT1 = 0 e GT2 = 1 -> B > A
 GT1 = 0 e GT2 = 0 -> A = B
 ```
 
+No display, a comparação foi configurada assim:
+
+| Condição | Valor mostrado no display |
+| -------- | ------------------------- |
+| A > B    | A                         |
+| B > A    | b                         |
+| A = B    | 0                         |
+
+Foi usado **b minúsculo** porque em display de 7 segmentos a letra `B` maiúscula não fica bem representada. O padrão mais legível é usar `b`.
+
+### 10.3 Complemento
+
+No complemento, os bits que chegam ao Arduino **já são o próprio complemento**.
+
+Então o código não inverte mais os bits.
+
+Ele apenas lê:
+
+```text
+MUX0 -> ~A
+MUX1 -> ~B
+```
+
+E transforma isso em decimal/hexadecimal para mostrar no display.
+
+Exemplo:
+
+```text
+~B~A = 00 -> 0
+~B~A = 01 -> 1
+~B~A = 10 -> 2
+~B~A = 11 -> 3
+```
+
 ---
 
-## 8. Código do Arduino
+## 11. Display de 7 segmentos em hexadecimal
 
-Abaixo está o código usado para controlar a ULA, selecionar as operações, ler os bits vindos dos MUX e exibir o resultado.
+No começo do projeto, foram considerados dois displays para mostrar dezena e unidade. Depois, o sistema foi simplificado para usar **apenas um display de 7 segmentos**.
+
+Como a saída final tem 4 bits, o maior valor possível é:
+
+```text
+1111₂ = 15₁₀ = F₁₆
+```
+
+Por isso, um único display hexadecimal é suficiente para representar qualquer saída de 4 bits.
+
+O display mostra:
+
+```text
+0, 1, 2, 3, 4, 5, 6, 7, 8, 9, A, b, C, d, E, F
+```
+
+### 11.1 Pinos dos segmentos
+
+O mapeamento final dos segmentos ficou:
+
+| Segmento | Pino Arduino |
+| -------- | ------------ |
+| A        | 40           |
+| B        | 41           |
+| C        | 42           |
+| D        | 43           |
+| E        | 44           |
+| F        | 45           |
+| G        | 46           |
+
+Durante os testes, foi verificado que o correto era manter:
+
+```text
+SEG_B = 41
+SEG_F = 45
+```
+
+Com essa configuração, os números passaram a aparecer corretamente no display.
+
+### 11.2 Pino comum do display
+
+Como está sendo usado apenas um dígito do display, foi usado um único pino comum:
+
+```text
+DIG_HEX = 47
+```
+
+Se for usado o outro lado de um display duplo, basta trocar para outro pino comum, por exemplo:
+
+```text
+DIG_HEX = 48
+```
+
+### 11.3 Tipo do display
+
+O display usado foi tratado como **ânodo comum**.
+
+Por isso:
+
+* o pino comum do display é ativado em nível alto
+* os segmentos acendem em nível baixo
+
+No código, isso ficou separado em duas configurações:
 
 ```cpp
+const bool COMMON_ANODE = true;
+const bool DIGIT_ACTIVE_HIGH = true;
+```
+
+---
+
+## 12. Código final do Arduino
+
+```cpp
+// ULA com 1 display em hexadecimal
+
 const int OP0 = 2;
 const int OP1 = 3;
 
@@ -517,7 +643,8 @@ const int IN1 = 23;
 const int IN2 = 24;
 const int IN3 = 25;
 
-const bool COMMON_ANODE = false;
+const bool COMMON_ANODE = true;
+const bool DIGIT_ACTIVE_HIGH = true;
 
 const int SEG_A = 40;
 const int SEG_B = 41;
@@ -527,8 +654,7 @@ const int SEG_E = 44;
 const int SEG_F = 45;
 const int SEG_G = 46;
 
-const int DIG_TENS = 47;
-const int DIG_UNITS = 48;
+const int DIG_HEX = 47;
 
 const int MAX_OPCODES = 64;
 uint8_t programOpcodes[MAX_OPCODES];
@@ -538,24 +664,31 @@ int pc = 0;
 String lineBuffer = "";
 int currentValueToDisplay = 0;
 
-const bool digitMap[10][7] = {
-  {1,1,1,1,1,1,0},
-  {0,1,1,0,0,0,0},
-  {1,1,0,1,1,0,1},
-  {1,1,1,1,0,0,1},
-  {0,1,1,0,0,1,1},
-  {1,0,1,1,0,1,1},
-  {1,0,1,1,1,1,1},
-  {1,1,1,0,0,0,0},
-  {1,1,1,1,1,1,1},
-  {1,1,1,1,0,1,1}
-};
-
 struct MuxData {
   int b0;
   int b1;
   int b2;
   int b3;
+};
+
+// ordem: a b c d e f g
+const bool hexMap[16][7] = {
+  {1,1,1,1,1,1,0}, // 0
+  {0,1,1,0,0,0,0}, // 1
+  {1,1,0,1,1,0,1}, // 2
+  {1,1,1,1,0,0,1}, // 3
+  {0,1,1,0,0,1,1}, // 4
+  {1,0,1,1,0,1,1}, // 5
+  {1,0,1,1,1,1,1}, // 6
+  {1,1,1,0,0,0,0}, // 7
+  {1,1,1,1,1,1,1}, // 8
+  {1,1,1,1,0,1,1}, // 9
+  {1,1,1,0,1,1,1}, // A
+  {0,0,1,1,1,1,1}, // b
+  {1,0,0,1,1,1,0}, // C
+  {0,1,1,1,1,0,1}, // d
+  {1,0,0,1,1,1,1}, // E
+  {1,0,0,0,1,1,1}  // F
 };
 
 void writeOpcode(uint8_t opcode) {
@@ -577,72 +710,80 @@ int readNibble() {
   return (data.b0 << 0) | (data.b1 << 1) | (data.b2 << 2) | (data.b3 << 3);
 }
 
+void printInputBits() {
+  MuxData data = readInputs();
+
+  Serial.print("Bits lidos 22 23 24 25 -> ");
+  Serial.print(data.b0);
+  Serial.print(" ");
+  Serial.print(data.b1);
+  Serial.print(" ");
+  Serial.print(data.b2);
+  Serial.print(" ");
+  Serial.println(data.b3);
+
+  Serial.print("Binario [25..22] = ");
+  Serial.print(data.b3);
+  Serial.print(data.b2);
+  Serial.print(data.b1);
+  Serial.println(data.b0);
+}
+
 int readSumValue() {
   return readNibble();
 }
 
-int readComparisonValue() {
+int readComplementValue() {
   MuxData data = readInputs();
-  int a = data.b2;
-  int b = data.b3;
-  return (a || b) ? 1 : 0;
+
+  int y0 = data.b0;
+  int y1 = data.b1;
+
+  Serial.print("Complemento recebido bruto: ");
+  Serial.print(y1);
+  Serial.println(y0);
+
+  return (y0 << 0) | (y1 << 1);
 }
 
-void reportComparisonRelation() {
+int readComparisonDisplayValue() {
   MuxData data = readInputs();
 
   int gt1 = data.b0;
   int gt2 = data.b1;
-  int a = data.b2;
-  int b = data.b3;
+  int a   = data.b2;
+  int b   = data.b3;
 
-  Serial.print("Comparacao: A=");
-  Serial.print(a);
-  Serial.print(" B=");
-  Serial.print(b);
-  Serial.print(" | GT1=");
+  Serial.print("Comparacao -> GT1=");
   Serial.print(gt1);
   Serial.print(" GT2=");
   Serial.print(gt2);
+  Serial.print(" A=");
+  Serial.print(a);
+  Serial.print(" B=");
+  Serial.print(b);
   Serial.print(" | Relacao: ");
 
   if (gt1 == 1 && gt2 == 0) {
     Serial.println("A > B");
-  } else if (gt1 == 0 && gt2 == 1) {
+    return 10;
+  }
+
+  if (gt1 == 0 && gt2 == 1) {
     Serial.println("B > A");
-  } else if (gt1 == 0 && gt2 == 0) {
+    return 11;
+  }
+
+  if (gt1 == 0 && gt2 == 0) {
     Serial.println("A = B");
-  } else {
-    Serial.println("estado invalido");
-  }
-}
-
-int readComplementValue() {
-  MuxData data = readInputs();
-  return (data.b0 << 0) | (data.b1 << 1);
-}
-
-void setSegmentsForDigit(int d) {
-  if (d < 0 || d > 9) d = 0;
-
-  bool segState[7];
-  for (int i = 0; i < 7; i++) {
-    segState[i] = digitMap[d][i];
-    if (COMMON_ANODE) {
-      segState[i] = !segState[i];
-    }
+    return 0;
   }
 
-  digitalWrite(SEG_A, segState[0]);
-  digitalWrite(SEG_B, segState[1]);
-  digitalWrite(SEG_C, segState[2]);
-  digitalWrite(SEG_D, segState[3]);
-  digitalWrite(SEG_E, segState[4]);
-  digitalWrite(SEG_F, segState[5]);
-  digitalWrite(SEG_G, segState[6]);
+  Serial.println("estado invalido");
+  return 15;
 }
 
-void enableDigit(int pin, bool on) {
+void writeSegmentPin(int pin, bool on) {
   if (COMMON_ANODE) {
     digitalWrite(pin, on ? LOW : HIGH);
   } else {
@@ -650,47 +791,44 @@ void enableDigit(int pin, bool on) {
   }
 }
 
+void setSegmentsForHex(int value) {
+  if (value < 0) value = 0;
+  if (value > 15) value = 15;
+
+  writeSegmentPin(SEG_A, hexMap[value][0]);
+  writeSegmentPin(SEG_B, hexMap[value][1]);
+  writeSegmentPin(SEG_C, hexMap[value][2]);
+  writeSegmentPin(SEG_D, hexMap[value][3]);
+  writeSegmentPin(SEG_E, hexMap[value][4]);
+  writeSegmentPin(SEG_F, hexMap[value][5]);
+  writeSegmentPin(SEG_G, hexMap[value][6]);
+}
+
+void enableDigit(bool on) {
+  if (DIGIT_ACTIVE_HIGH) {
+    digitalWrite(DIG_HEX, on ? HIGH : LOW);
+  } else {
+    digitalWrite(DIG_HEX, on ? LOW : HIGH);
+  }
+}
+
 void turnOffAllSegments() {
-  digitalWrite(SEG_A, COMMON_ANODE ? HIGH : LOW);
-  digitalWrite(SEG_B, COMMON_ANODE ? HIGH : LOW);
-  digitalWrite(SEG_C, COMMON_ANODE ? HIGH : LOW);
-  digitalWrite(SEG_D, COMMON_ANODE ? HIGH : LOW);
-  digitalWrite(SEG_E, COMMON_ANODE ? HIGH : LOW);
-  digitalWrite(SEG_F, COMMON_ANODE ? HIGH : LOW);
-  digitalWrite(SEG_G, COMMON_ANODE ? HIGH : LOW);
+  writeSegmentPin(SEG_A, false);
+  writeSegmentPin(SEG_B, false);
+  writeSegmentPin(SEG_C, false);
+  writeSegmentPin(SEG_D, false);
+  writeSegmentPin(SEG_E, false);
+  writeSegmentPin(SEG_F, false);
+  writeSegmentPin(SEG_G, false);
 }
 
 void refreshDisplay() {
-  static bool showTens = false;
-  static unsigned long lastMuxMicros = 0;
-
-  unsigned long now = micros();
-  if (now - lastMuxMicros < 2000) return;
-  lastMuxMicros = now;
-
   int value = currentValueToDisplay;
   if (value < 0) value = 0;
-  if (value > 99) value = 99;
+  if (value > 15) value = 15;
 
-  int tens = value / 10;
-  int units = value % 10;
-
-  enableDigit(DIG_TENS, false);
-  enableDigit(DIG_UNITS, false);
-
-  if (showTens) {
-    if (tens == 0 && value < 10) {
-      turnOffAllSegments();
-    } else {
-      setSegmentsForDigit(tens);
-      enableDigit(DIG_TENS, true);
-    }
-  } else {
-    setSegmentsForDigit(units);
-    enableDigit(DIG_UNITS, true);
-  }
-
-  showTens = !showTens;
+  setSegmentsForHex(value);
+  enableDigit(true);
 }
 
 bool isBinaryString(const String& s) {
@@ -699,6 +837,7 @@ bool isBinaryString(const String& s) {
   for (unsigned int i = 0; i < s.length(); i++) {
     if (s[i] != '0' && s[i] != '1') return false;
   }
+
   return true;
 }
 
@@ -756,34 +895,53 @@ void executeNextOpcode() {
 
   switch (opcode) {
     case 0b00: {
+      printInputBits();
+
       int value = readSumValue();
       currentValueToDisplay = value;
 
-      Serial.print("OP 00 - SOMA -> ");
-      Serial.println(value);
+      Serial.print("OP 00 - SOMA -> decimal ");
+      Serial.print(value);
+      Serial.print(" | hex ");
+      Serial.println(value, HEX);
       break;
     }
 
     case 0b01: {
-      int value = readComparisonValue();
+      printInputBits();
+
+      int value = readComparisonDisplayValue();
       currentValueToDisplay = value;
 
-      Serial.print("OP 01 - COMPARACAO -> maior valor = ");
-      Serial.println(value);
-      reportComparisonRelation();
+      Serial.print("OP 01 - COMPARACAO -> display ");
+      if (value == 10) {
+        Serial.println("A");
+      } else if (value == 11) {
+        Serial.println("b");
+      } else if (value == 0) {
+        Serial.println("0");
+      } else {
+        Serial.println("F");
+      }
       break;
     }
 
     case 0b10: {
+      printInputBits();
+
       int value = readComplementValue();
       currentValueToDisplay = value;
 
-      Serial.print("OP 10 - COMPLEMENTO -> ");
-      Serial.println(value);
+      Serial.print("OP 10 - COMPLEMENTO -> decimal ");
+      Serial.print(value);
+      Serial.print(" | hex ");
+      Serial.println(value, HEX);
       break;
     }
 
     case 0b11: {
+      printInputBits();
+
       currentValueToDisplay = 0;
       Serial.println("OP 11 - RESERVADO -> 0");
       break;
@@ -845,18 +1003,19 @@ void setup() {
   pinMode(SEG_F, OUTPUT);
   pinMode(SEG_G, OUTPUT);
 
-  pinMode(DIG_TENS, OUTPUT);
-  pinMode(DIG_UNITS, OUTPUT);
+  pinMode(DIG_HEX, OUTPUT);
 
   writeOpcode(0);
   currentValueToDisplay = 0;
 
-  enableDigit(DIG_TENS, false);
-  enableDigit(DIG_UNITS, false);
+  enableDigit(false);
   turnOffAllSegments();
 
   Serial.println("=== ULA combinacional - Mega 2560 ===");
-  Serial.println("Lendo apenas as entradas 22, 23, 24 e 25.");
+  Serial.println("Usando 1 display em hexadecimal.");
+  Serial.println("Comparacao: A>B mostra A, B>A mostra b, iguais mostra 0.");
+  Serial.println("Complemento: le os bits brutos e converte direto.");
+  Serial.println("Lendo apenas 22, 23, 24 e 25.");
   Serial.println("Envie algo como 000110");
   Serial.println("Isso vira: [00] [01] [10]");
   Serial.println("Depois envie * para executar uma por vez.");
@@ -884,172 +1043,85 @@ void loop() {
 }
 ```
 
-### 8.1 Resumo do que o código faz
+---
 
-O código foi dividido em algumas partes principais.
+## 13. Explicação do código
 
-#### Escrita do opcode
+### 13.1 Escrita do opcode
 
-A função `writeOpcode()` coloca o valor de `OP0` e `OP1` nas saídas do Arduino. Esse valor é usado para escolher qual operação os MUX devem entregar.
+A função `writeOpcode()` envia o opcode para os pinos `OP0` e `OP1`.
 
-#### Leitura das entradas dos MUX
+Esses dois sinais vão para todos os MUX e escolhem qual operação será exibida na saída.
 
-As funções `readInputs()` e `readNibble()` fazem a leitura dos pinos `22, 23, 24 e 25` e montam um número de 4 bits.
+### 13.2 Leitura dos bits finais
 
-#### Leitura por operação
+A função `readInputs()` lê os pinos `22, 23, 24 e 25`.
 
-Existem funções separadas para cada caso:
+A função `readNibble()` transforma esses quatro bits em um valor numérico de 0 a 15.
 
-* `readSumValue()`
-* `readComparisonValue()`
-* `readComplementValue()`
+### 13.3 Soma
 
-Isso deixa a lógica mais organizada, porque cada opcode pode interpretar os mesmos 4 pinos de um jeito diferente.
-
-#### Execução de instruções
-
-A função `executeNextOpcode()` pega o próximo opcode carregado, envia para o hardware, espera os sinais estabilizarem e depois faz a leitura correta da operação.
-
-#### Controle pelo monitor serial
-
-O usuário pode digitar uma sequência binária no monitor serial, por exemplo:
+Na soma, o Arduino apenas lê os quatro bits e mostra o valor hexadecimal correspondente.
 
 ```text
-000110
+Soma -> [S0, S1, S2, Cout]
 ```
 
-Essa sequência é quebrada assim:
+### 13.4 Comparação
+
+Na comparação, o Arduino lê `GT1`, `GT2`, `A` e `B`.
+
+Depois mostra no display:
 
 ```text
-00 01 10
+A > B -> A
+B > A -> b
+A = B -> 0
 ```
 
-Depois, cada vez que `*` é enviado, o Arduino executa a próxima instrução.
+### 13.5 Complemento
 
-#### Atualização do display
+No complemento, os bits recebidos já são os bits complementados.
 
-A função `refreshDisplay()` atualiza continuamente os dois displays de 7 segmentos usando multiplexação.
+Por isso, o código não usa `!` para inverter.
+
+Ele apenas faz:
+
+```text
+valor = ~A + 2·~B
+```
+
+E mostra esse valor em hexadecimal.
+
+### 13.6 Display hexadecimal
+
+A tabela `hexMap` define quais segmentos acendem para cada valor.
+
+A ordem usada é:
+
+```text
+A, B, C, D, E, F, G
+```
+
+Como o display é de ânodo comum, a função `writeSegmentPin()` inverte a lógica automaticamente:
+
+```text
+segmento ligado -> LOW
+segmento desligado -> HIGH
+```
 
 ---
 
-## 9. Uso dos dois displays de 7 segmentos
+## 14. Resultado final
 
-O sistema usa **dois displays de 7 segmentos** para mostrar o valor final lido pelo Arduino.
+Com as mudanças feitas, o sistema ficou assim:
 
-Esses dois displays representam:
+* o Arduino lê apenas os pinos `22, 23, 24 e 25`
+* a saída é exibida em apenas **um display de 7 segmentos**
+* o valor é mostrado em **hexadecimal**
+* a soma pode mostrar de `0` até `F`
+* a comparação mostra `A`, `b` ou `0`
+* o complemento usa os bits brutos já complementados
+* os segmentos finais ficaram com `B = 41` e `F = 45`
 
-* **unidade**
-* **dezena**
-
-Assim, o sistema pode exibir valores de `0` até `99`.
-
-### 9.1 Por que usar dois displays
-
-Como a saída do circuito pode ser mostrada em forma decimal, usar dois displays facilita a visualização do resultado.
-
-Exemplos:
-
-* soma `3 + 4 = 7` -> mostra `07` ou apenas `7`
-* soma `5 + 6 = 11` -> mostra `11`
-* complemento `10` -> mostra `2`
-* comparação -> pode mostrar `0` ou `1`, dependendo do valor carregado para exibição
-
-### 9.2 Organização dos segmentos
-
-Os segmentos do display foram ligados aos pinos:
-
-* `SEG_A = 40`
-* `SEG_B = 41`
-* `SEG_C = 42`
-* `SEG_D = 43`
-* `SEG_E = 44`
-* `SEG_F = 45`
-* `SEG_G = 46`
-
-Os pinos que habilitam cada dígito são:
-
-* `DIG_TENS = 47` -> display da dezena
-* `DIG_UNITS = 48` -> display da unidade
-
-### 9.3 Como os dois displays funcionam juntos
-
-Os dois displays compartilham as mesmas linhas de segmento `A` até `G`.
-
-O que muda é qual display está ativado naquele instante.
-
-Então o Arduino faz o seguinte:
-
-1. desliga os dois displays
-2. liga os segmentos da dezena e ativa só o display da dezena
-3. desliga de novo
-4. liga os segmentos da unidade e ativa só o display da unidade
-5. repete isso muito rápido
-
-Esse processo é chamado de **multiplexação**.
-
-Como a troca é muito rápida, o olho humano enxerga os dois displays ligados ao mesmo tempo.
-
-### 9.4 Separação entre dezena e unidade
-
-O valor final fica salvo em `currentValueToDisplay`.
-
-Depois ele é separado assim:
-
-```text
-dezena = valor / 10
-unidade = valor % 10
-```
-
-Exemplo para o número `14`:
-
-```text
-dezena = 14 / 10 = 1
-unidade = 14 % 10 = 4
-```
-
-### 9.5 Tabela dos dígitos
-
-No código, a tabela `digitMap` guarda quais segmentos devem acender para cada número de `0` a `9`.
-
-Exemplo:
-
-* para mostrar `0`, todos os segmentos acendem, menos o `G`
-* para mostrar `1`, acendem apenas os segmentos `B` e `C`
-* para mostrar `8`, todos os segmentos acendem
-
-### 9.6 Zero à esquerda
-
-O código também evita mostrar a dezena quando ela é zero e o valor é menor que 10.
-
-Por isso, em vez de aparecer:
-
-```text
-05
-```
-
-pode aparecer apenas:
-
-```text
-5
-```
-
-Isso deixa a exibição mais natural.
-
----
-
-## 10. Integração entre Arduino, MUX e displays
-
-O fluxo completo do sistema pode ser resumido assim:
-
-1. o usuário envia uma sequência binária pelo monitor serial
-2. o Arduino separa essa sequência em opcodes
-3. o Arduino envia o opcode para `OP0` e `OP1`
-4. os 4 multiplexadores colocam a saída certa nos pinos `22, 23, 24 e 25`
-5. o Arduino lê esses 4 bits
-6. o valor lido é convertido e salvo
-7. o resultado é mostrado nos displays de 7 segmentos
-8. no caso da comparação, o monitor serial também informa a relação entre `A` e `B`
-
-Esse modelo permitiu usar o Arduino como unidade de controle do sistema, mantendo a parte lógica principal no hardware digital e usando software apenas para seleção, leitura e exibição dos resultados.
-
----
+Esse formato simplificou a parte visual do projeto, porque um único display hexadecimal consegue representar qualquer resultado de 4 bits.
