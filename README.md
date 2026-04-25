@@ -1123,7 +1123,7 @@ Com as mudanças feitas, o sistema ficou assim:
 * a comparação mostra `A`, `b` ou `0`
 * o complemento usa os bits brutos já complementados
 
-# Seções adicionais do README — Implementação com CIs e Relatório de Testes
+# Implementação com CIs e Relatório de Testes
 
 ## 15. Lista de CIs e componentes
 
