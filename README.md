@@ -1122,7 +1122,6 @@ Com as mudanças feitas, o sistema ficou assim:
 * a soma pode mostrar de `0` até `F`
 * a comparação mostra `A`, `b` ou `0`
 * o complemento usa os bits brutos já complementados
-* os segmentos finais ficaram com `B = 41` e `F = 45`
 
 # Seções adicionais do README — Implementação com CIs e Relatório de Testes
 
