@@ -1,3 +1,8 @@
+// Grupo B:
+// 202208385001 João Marcio Prado Silva TA
+// 202301165784 Guilherme Maranhão TA
+// 202402075365 Gabriel Lacerda TA
+// 202307539741 Victor Coutinho NT
 // ULA com 1 display só em hexadecimal
 
 const int OP0 = 2;
