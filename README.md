@@ -589,12 +589,6 @@ O mapeamento final dos segmentos ficou:
 | F        | 45           |
 | G        | 46           |
 
-Durante os testes, foi verificado que o correto era manter:
-
-```text
-SEG_B = 41
-SEG_F = 45
-```
 
 Com essa configuração, os números passaram a aparecer corretamente no display.
 
