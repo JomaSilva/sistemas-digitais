@@ -1734,8 +1734,6 @@ Valores esperados:
 | Teste                 | Resultado |
 | --------------------- | --------- |
 | Display hexadecimal   | Aprovado  |
-| Segmento B no pino 41 | Aprovado  |
-| Segmento F no pino 45 | Aprovado  |
 
 Status:
 
