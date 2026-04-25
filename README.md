@@ -1633,22 +1633,31 @@ pino 23 -> S1 = 0
 pino 24 -> S2 = 0
 pino 25 -> Cout = 1
 ```
+```text
+pino 22 -> S0 = 0
+pino 23 -> S1 = 1
+pino 24 -> S2 = 1
+pino 25 -> Cout = 1
+```
 
 O valor montado pelo Arduino é:
 
 ```text
 [25..22] = 1000₂ = 8₁₀ = 8₁₆
 ```
+```text
+[25..22] = 1110₂ = 14₁₀ = E₁₆
+```
 
-| Campo             | Valor    |
-| ----------------- | -------- |
-| Opcode            | 00       |
-| Entrada A         | 101      |
-| Entrada B         | 011      |
-| Resultado binário | 1000     |
-| Resultado decimal | 8        |
-| Display           | 8        |
-| Status            | Aprovado |
+| Campo             | Valor1   | Valor2    |
+| ----------------- | -------- | --------  |
+| Opcode            | 00       | 00        |  
+| Entrada A         | 101      | 111       |
+| Entrada B         | 011      | 111       |
+| Resultado binário | 1000     | 1110      |
+| Resultado decimal | 8        | 14        |
+| Display           | 8        | E         |
+| Status            | Aprovado | Aprovado  |
 
 ---
 
