@@ -391,7 +391,7 @@ Essa abordagem facilita bastante o projeto, porque o Arduino sempre lê o result
 
 ---
 
-## 6. Observação final
+## 6. Observação
 
 Ao representar o sistema como uma pequena ULA, as três operações podem ser vistas assim:
 
@@ -1112,7 +1112,7 @@ segmento desligado -> HIGH
 
 ---
 
-## 14. Resultado final
+## 14. Resultado
 
 Com as mudanças feitas, o sistema ficou assim:
 
@@ -1124,4 +1124,719 @@ Com as mudanças feitas, o sistema ficou assim:
 * o complemento usa os bits brutos já complementados
 * os segmentos finais ficaram com `B = 41` e `F = 45`
 
-Esse formato simplificou a parte visual do projeto, porque um único display hexadecimal consegue representar qualquer resultado de 4 bits.
+# Seções adicionais do README — Implementação com CIs e Relatório de Testes
+
+## 15. Lista de CIs e componentes
+
+A tabela abaixo resume os principais componentes usados na montagem final do projeto.
+
+| Quantidade | Componente             | Função no projeto                                                                   |
+| ---------: | ---------------------- | ----------------------------------------------------------------------------------- |
+|          1 | Arduino Mega 2560      | Controle dos opcodes, leitura dos MUX, alimentação `5V`, `GND` e pinagem do display |
+|          1 | Somador de 4 bits      | Bloco somador usado para realizar a soma binária de 3 bits                          |
+|          4 | MUX 8x1                | Seleção das saídas de cada operação para leitura no Arduino                         |
+|          2 | NOT                    | Inversão de sinais no complemento e no comparador                                   |
+|          1 | AND                    | Implementação das expressões do comparador e habilitação lógica dos sinais          |
+|          1 | Display de 7 segmentos | Exibição do resultado em hexadecimal                                                |
+|         10 | LEDs                   | Indicação visual das entradas: 6 do somador, 2 do comparador e 2 do complemento     |
+|         17 | Resistores de 330Ω     | Limitação de corrente dos LEDs e do display de 7 segmentos                          |
+|     Vários | Jumpers                | Conexões entre Arduino, protoboard, CIs, MUX e display                              |
+|          1 | Protoboard             | Montagem física do circuito                                                         |
+
+O Arduino Mega foi usado também como ponto de referência para:
+
+* `GND`
+* `VCC = 5V`
+* pinos digitais de controle
+* pinos digitais de leitura
+* pinos digitais do display de 7 segmentos
+
+---
+
+## 16. Visão geral da implementação
+
+O projeto funciona como uma pequena ULA combinacional controlada pelo Arduino.
+
+As operações disponíveis são:
+
+```text
+00 -> Soma
+01 -> Comparação
+10 -> Complemento
+11 -> Reservado
+```
+
+O Arduino envia o opcode pelos pinos:
+
+```text
+OP0 -> pino 2
+OP1 -> pino 3
+```
+
+Esses sinais selecionam qual operação será enviada pelos MUX para os pinos de leitura do Arduino.
+
+O Arduino lê sempre os mesmos quatro pinos:
+
+```text
+pino 22 -> bit 0
+pino 23 -> bit 1
+pino 24 -> bit 2
+pino 25 -> bit 3
+```
+
+A montagem do valor lido é feita assim:
+
+```text
+valor = bit0 + 2·bit1 + 4·bit2 + 8·bit3
+```
+
+---
+
+## 17. Entradas externas — chaves e LEDs
+
+As entradas dos operandos são feitas manualmente por chaves ou push-buttons.
+
+Cada entrada possui:
+
+* uma chave ligada ao `+5V`
+* um resistor de pull-down para manter nível lógico `0` quando a chave não está acionada
+* um LED de indicação visual
+* um resistor de `330Ω` em série com o LED
+
+Esquema básico de cada entrada:
+
+```text
++5V
+ |
+[Chave]
+ |
+ |---- fio de entrada do circuito
+ |
+ |---- [LED] ---- [330Ω] ---- GND
+ |
+[pull-down]
+ |
+GND
+```
+
+### 17.1 Resumo das entradas
+
+| Bloco       | Entradas               | Total de chaves | LEDs |
+| ----------- | ---------------------- | --------------- | ---- |
+| Somador     | A0, A1, A2, B0, B1, B2 | 6               | 6    |
+| Comparador  | A, B                   | 2               | 2    |
+| Complemento | X0, X1                 | 2               | 2    |
+| Total       | —                      | 10              | 10   |
+
+---
+
+## 18. Implementação do somador
+
+O somador foi implementado usando um **bloco somador de 4 bits**.
+
+Como o projeto soma dois números de **3 bits**, apenas três bits do somador são utilizados. O quarto bit é mantido em nível lógico `0`.
+
+
+### 18.1 Estratégia de uso
+
+O somador de 4 bits recebe dois operandos:
+
+```text
+A3 A2 A1 A0
+B3 B2 B1 B0
+```
+
+No projeto, usamos apenas 3 bits úteis:
+
+```text
+A0, A1, A2
+B0, B1, B2
+```
+
+O quarto bit do somador fica fixado em `0`.
+
+Mapeamento usado:
+
+| Entrada do somador de 4 bits | Sinal do projeto | Observação        |
+| ---------------------------- | ---------------- | ----------------- |
+| A1                           | A0               | bit 0 de A        |
+| A2                           | A1               | bit 1 de A        |
+| A3                           | A2               | bit 2 de A        |
+| A4                           | GND              | bit não usado     |
+| B1                           | B0               | bit 0 de B        |
+| B2                           | B1               | bit 1 de B        |
+| B3                           | B2               | bit 2 de B        |
+| B4                           | GND              | bit não usado     |
+| C0 / Carry-in                | GND              | sem carry inicial |
+
+A saída usada é:
+
+| Saída do somador | Função no projeto |
+| ---------------- | ----------------- |
+| S1               | S0                |
+| S2               | S1                |
+| S3               | S2                |
+| S4 / Cout        | Cout              |
+
+### 18.2 Bloco lógico do somador
+
+```text
+A0 ----┐
+A1 ----┤
+A2 ----┤
+       │
+       │      ┌────────────────────┐
+       ├─────▶│                    │────▶ S0 ---- MUX0
+       │      │   SOMADOR 4 BITS   │────▶ S1 ---- MUX1
+       ├─────▶│                    │────▶ S2 ---- MUX2
+       │      │                    │────▶ Cout -- MUX3
+B0 ----┤      └────────────────────┘
+B1 ----┤
+B2 ----┘
+
+A4 = 0
+B4 = 0
+Carry-in = 0
+```
+
+### 18.3 Código lógico do bloco somador
+
+A ideia do somador pode ser representada de forma abstrata assim:
+
+```text
+resultado = A + B
+```
+
+Onde:
+
+```text
+A = A0 + 2·A1 + 4·A2
+B = B0 + 2·B1 + 4·B2
+```
+
+E o resultado final possui 4 bits:
+
+```text
+resultado = Cout S2 S1 S0
+```
+
+No Arduino, esses bits chegam pelos MUX e são interpretados assim:
+
+```text
+S0   -> pino 22
+S1   -> pino 23
+S2   -> pino 24
+Cout -> pino 25
+```
+
+O valor exibido no display hexadecimal é montado por:
+
+```text
+valor = S0 + 2·S1 + 4·S2 + 8·Cout
+```
+
+### 18.4 Conexões do somador
+
+| Sinal | Origem           | Destino |
+| ----- | ---------------- | ------- |
+| S0    | saída do somador | MUX0    |
+| S1    | saída do somador | MUX1    |
+| S2    | saída do somador | MUX2    |
+| Cout  | saída do somador | MUX3    |
+
+---
+
+## 19. Implementação do comparador
+
+O comparador usa dois sinais de entrada:
+
+```text
+A
+B
+```
+
+Ele gera duas saídas:
+
+```text
+GT1 = A · B'
+GT2 = A' · B
+```
+
+Onde:
+
+```text
+GT1 = 1 -> A > B
+GT2 = 1 -> B > A
+GT1 = 0 e GT2 = 0 -> A = B
+```
+
+### 19.1 Lógica
+
+```text
+GT1 = A AND NOT(B)
+GT2 = NOT(A) AND B
+```
+
+### 19.2 Implementação com CIs
+
+```text
+B ---- NOT ---- B'
+
+A ----┐
+      ├── AND ---- GT1 ---- MUX0
+B' ---┘
+```
+
+```text
+A ---- NOT ---- A'
+
+A' ---┐
+      ├── AND ---- GT2 ---- MUX1
+B ----┘
+```
+
+Os valores originais `A` e `B` também são enviados aos MUX para conferência pelo Arduino:
+
+```text
+A ---- MUX2
+B ---- MUX3
+```
+
+### 19.3 Conexões do comparador
+
+| Componente | Entrada 1 | Entrada 2 | Saída |
+| ---------- | --------- | --------- | ----- |
+| NOT 1      | B         | —         | B'    |
+| NOT 2      | A         | —         | A'    |
+| AND 1      | A         | B'        | GT1   |
+| AND 2      | A'        | B         | GT2   |
+
+### 19.4 Saída no display
+
+Na versão final, o Arduino interpreta `GT1` e `GT2` e mostra:
+
+| Condição | Display |
+| -------- | ------- |
+| A > B    | A       |
+| B > A    | b       |
+| A = B    | 0       |
+
+Foi usado `b` minúsculo porque é a forma mais legível de representar B em um display de 7 segmentos.
+
+---
+
+## 20. Implementação do complemento
+
+O complemento inverte dois bits de entrada:
+
+```text
+X0
+X1
+```
+
+As saídas são:
+
+```text
+Y0 = NOT(X0)
+Y1 = NOT(X1)
+```
+
+### 20.1 Lógica
+
+```text
+Y0 = X0'
+Y1 = X1'
+```
+
+### 20.2 Implementação com CIs
+
+```text
+X0 ---- NOT ---- Y0 ---- MUX0
+X1 ---- NOT ---- Y1 ---- MUX1
+```
+
+No projeto final, o Arduino considera que os bits recebidos nessa operação **já são o complemento**.
+
+Então o código não inverte novamente esses bits.
+
+Ele apenas lê os bits brutos:
+
+```text
+Y0 -> pino 22
+Y1 -> pino 23
+```
+
+E monta:
+
+```text
+valor = Y0 + 2·Y1
+```
+
+### 20.3 Conexões do complemento
+
+| Componente | Entrada | Saída    | Destino |
+| ---------- | ------- | -------- | ------- |
+| NOT 1      | X0      | Y0 = X0' | MUX0    |
+| NOT 2      | X1      | Y1 = X1' | MUX1    |
+
+---
+
+## 21. Implementação dos multiplexadores
+
+Foram usados **4 MUX 8x1**.
+
+Cada MUX representa um bit da saída final.
+
+O Arduino lê sempre:
+
+```text
+MUX0 -> pino 22
+MUX1 -> pino 23
+MUX2 -> pino 24
+MUX3 -> pino 25
+```
+
+### 21.1 Organização dos sinais nos MUX
+
+| MUX  | Operação 00 — Soma | Operação 01 — Comparação | Operação 10 — Complemento | Saída para Arduino |
+| ---- | ------------------ | ------------------------ | ------------------------- | ------------------ |
+| MUX0 | S0                 | GT1                      | Y0 = X0'                  | pino 22            |
+| MUX1 | S1                 | GT2                      | Y1 = X1'                  | pino 23            |
+| MUX2 | S2                 | A                        | 0                         | pino 24            |
+| MUX3 | Cout               | B                        | 0                         | pino 25            |
+
+### 21.2 Seleção dos MUX
+
+Os MUX usam os sinais de seleção vindos do Arduino:
+
+```text
+OP1 OP0
+```
+
+Tabela de seleção:
+
+| OP1 | OP0 | Operação selecionada |
+| --- | --- | -------------------- |
+| 0   | 0   | Soma                 |
+| 0   | 1   | Comparação           |
+| 1   | 0   | Complemento          |
+| 1   | 1   | Reservado            |
+
+Como o MUX é 8x1 e o projeto usa apenas quatro opções, a terceira linha de seleção pode ficar fixa em `0`.
+
+---
+
+## 22. Implementação do display hexadecimal
+
+A versão final usa apenas **um display de 7 segmentos**.
+
+Como a saída lida pelo Arduino possui 4 bits, o maior valor possível é:
+
+```text
+1111₂ = 15₁₀ = F₁₆
+```
+
+Por isso, um único display hexadecimal representa todos os resultados possíveis.
+
+### 22.1 Mapeamento final dos segmentos
+
+| Segmento | Pino Arduino |
+| -------- | ------------ |
+| A        | 40           |
+| B        | 41           |
+| C        | 42           |
+| D        | 43           |
+| E        | 44           |
+| F        | 45           |
+| G        | 46           |
+
+
+### 22.2 Display usado
+
+O display foi tratado como **ânodo comum**.
+
+No código:
+
+```cpp
+const bool COMMON_ANODE = true;
+const bool DIGIT_ACTIVE_HIGH = true;
+```
+
+Isso significa:
+
+```text
+segmento ligado    -> LOW
+segmento desligado -> HIGH
+pino comum ligado  -> HIGH
+```
+
+---
+
+## 23. Relatório de testes
+
+A seguir estão os testes principais realizados para validar a montagem.
+
+---
+
+## T01 — Seleção de operação
+
+Objetivo: verificar se o opcode enviado pelo Arduino seleciona corretamente a operação nos MUX.
+
+| Opcode | Operação esperada | Saídas selecionadas |
+| ------ | ----------------- | ------------------- |
+| 00     | Soma              | S0, S1, S2, Cout    |
+| 01     | Comparação        | GT1, GT2, A, B      |
+| 10     | Complemento       | Y0, Y1, 0, 0        |
+| 11     | Reservado         | 0                   |
+
+Status:
+
+```text
+T01 -> Aprovado
+```
+
+---
+
+## T02 — Soma binária
+
+Objetivo: testar o somador de 3 bits usando o bloco somador de 4 bits.
+
+### Casos testado
+
+```text
+A = 101₂ = 5₁₀
+B = 011₂ = 3₁₀
+Esperado: 5 + 3 = 8
+```
+```text
+A = 111₂ = 7₁₀
+B = 111₂ = 7₁₀
+Esperado: 7 + 7 = 14
+```
+
+### Resultados
+
+```text
+Cout S2 S1 S0 = 1000
+Display = 8
+```
+```text
+Cout S2 S1 S0 = 1110
+Display = E
+```
+
+### Leitura pelos MUX
+
+```text
+pino 22 -> S0 = 0
+pino 23 -> S1 = 0
+pino 24 -> S2 = 0
+pino 25 -> Cout = 1
+```
+
+O valor montado pelo Arduino é:
+
+```text
+[25..22] = 1000₂ = 8₁₀ = 8₁₆
+```
+
+| Campo             | Valor    |
+| ----------------- | -------- |
+| Opcode            | 00       |
+| Entrada A         | 101      |
+| Entrada B         | 011      |
+| Resultado binário | 1000     |
+| Resultado decimal | 8        |
+| Display           | 8        |
+| Status            | Aprovado |
+
+---
+
+## T03 — Comparação lógica
+
+Objetivo: verificar se o comparador identifica corretamente `A > B`, `B > A` e `A = B`.
+
+A saída da comparação é organizada assim:
+
+```text
+pino 22 -> GT1
+pino 23 -> GT2
+pino 24 -> A
+pino 25 -> B
+```
+
+### Casos testados
+
+| Caso | A | B | GT1 | GT2 | Relação | Display | Status   |
+| ---- | - | - | --- | --- | ------- | ------- | -------- |
+| 1    | 0 | 0 | 0   | 0   | A = B   | 0       | Aprovado |
+| 2    | 0 | 1 | 0   | 1   | B > A   | b       | Aprovado |
+| 3    | 1 | 0 | 1   | 0   | A > B   | A       | Aprovado |
+| 4    | 1 | 1 | 0   | 0   | A = B   | 0       | Aprovado |
+
+Status:
+
+```text
+T03 -> Aprovado
+```
+
+---
+
+## T04 — Complemento de 1
+
+Objetivo: testar o bloco de complemento de 2 bits.
+
+No projeto final, os bits que chegam ao Arduino já estão complementados pelo hardware.
+
+Logo:
+
+```text
+pino 22 -> Y0 = X0'
+pino 23 -> Y1 = X1'
+```
+
+O Arduino monta:
+
+```text
+valor = Y0 + 2·Y1
+```
+
+### Casos testados
+
+| X1 | X0 | Y1 = X1' | Y0 = X0' | Valor binário Y1Y0 | Display | Status   |
+| -- | -- | -------- | -------- | ------------------ | ------- | -------- |
+| 0  | 0  | 1        | 1        | 11                 | 3       | Aprovado |
+| 0  | 1  | 1        | 0        | 10                 | 2       | Aprovado |
+| 1  | 0  | 0        | 1        | 01                 | 1       | Aprovado |
+| 1  | 1  | 0        | 0        | 00                 | 0       | Aprovado |
+
+Status:
+
+```text
+T04 -> Aprovado
+```
+
+---
+
+## T05 — Display hexadecimal
+
+Objetivo: verificar se o display representa corretamente os valores de `0` até `F`.
+
+Valores esperados:
+
+```text
+0, 1, 2, 3, 4, 5, 6, 7, 8, 9, A, b, C, d, E, F
+```
+
+
+| Teste                 | Resultado |
+| --------------------- | --------- |
+| Display hexadecimal   | Aprovado  |
+| Segmento B no pino 41 | Aprovado  |
+| Segmento F no pino 45 | Aprovado  |
+
+Status:
+
+```text
+T05 -> Aprovado
+```
+
+---
+
+## T06 — Execução pelo Monitor Serial
+
+Objetivo: verificar se o Arduino carrega e executa opcodes enviados pelo Monitor Serial.
+
+Comando testado:
+
+```text
+000110
+```
+
+Divisão feita pelo Arduino:
+
+```text
+00 01 10
+```
+
+Ou seja:
+
+```text
+00 -> Soma
+01 -> Comparação
+10 -> Complemento
+```
+
+Fluxo observado:
+
+| Passo | Ação                 | Resultado esperado         |
+| ----- | -------------------- | -------------------------- |
+| 1     | Enviar `000110`      | Programa carrega 3 opcodes |
+| 2     | Enviar `*`           | Executa soma               |
+| 3     | Enviar `*`           | Executa comparação         |
+| 4     | Enviar `*`           | Executa complemento        |
+| 5     | Enviar `*` novamente | Fim do programa            |
+
+Status:
+
+```text
+T06 -> Aprovado
+```
+
+---
+
+## T07 — Demonstração completa
+
+Objetivo: validar o sistema completo em sequência.
+
+| Passo | Ação                            | Resultado observado                                |
+| ----- | ------------------------------- | -------------------------------------------------- |
+| 1     | Configurar entradas manuais     | chaves definem os valores de entrada               |
+| 2     | Enviar programa pelo Serial     | opcodes carregados                                 |
+| 3     | Enviar `*`                      | Arduino envia opcode para os MUX                   |
+| 4     | MUX seleciona operação          | saída correta chega em 22, 23, 24 e 25             |
+| 5     | Arduino interpreta os bits      | resultado calculado conforme operação              |
+| 6     | Display atualiza                | valor aparece em hexadecimal                       |
+| 7     | Monitor Serial imprime detalhes | bits lidos e operação executada aparecem no Serial |
+
+Status:
+
+```text
+T07 -> Aprovado
+```
+
+---
+
+## 24. Resumo geral dos testes
+
+| Teste | Descrição                   | Resultado |
+| ----- | --------------------------- | --------- |
+| T01   | Seleção de operação         | Aprovado  |
+| T02   | Soma binária                | Aprovado  |
+| T03   | Comparação lógica           | Aprovado  |
+| T04   | Complemento de 1            | Aprovado  |
+| T05   | Display hexadecimal         | Aprovado  |
+| T06   | Execução via Monitor Serial | Aprovado  |
+| T07   | Demonstração completa       | Aprovado  |
+
+Todos os testes principais foram executados e validados com sucesso.
+
+---
+
+## 25. Conclusão da implementação
+
+A implementação final integrou lógica combinacional, multiplexadores e controle por Arduino.
+
+O circuito realiza:
+
+* soma de dois números de 3 bits usando um bloco somador de 4 bits
+* comparação lógica entre dois bits
+* complemento de 1 em dois bits
+* seleção de operação por opcode
+* leitura das saídas por apenas 4 pinos do Arduino
+* exibição final em um display de 7 segmentos hexadecimal
+
+A solução final ficou mais simples visualmente por usar apenas um display, já que a saída de 4 bits pode ser representada diretamente em hexadecimal.
+
+Além disso, o Monitor Serial auxilia na validação do circuito, mostrando os bits lidos, a operação executada e o resultado interpretado pelo Arduino.
+
